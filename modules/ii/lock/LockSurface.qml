@@ -48,6 +48,12 @@ MouseArea {
     // Toolbar appearing animation
     property real toolbarScale: 0.9
     property real toolbarOpacity: 0
+
+    // Standalone build addition :: single knob scaling the whole lock UI
+    // (clock + all three bottom toolbars). 1.0 = upstream/SDDM-native sizes.
+    // Applied as a render transform, so all internal hardcoded dimensions stay
+    // proportionally correct at any value.
+    property real uiScale: 1.3
     Behavior on toolbarScale {
         NumberAnimation {
             duration: Appearance.animation.elementMove.duration
@@ -68,17 +74,26 @@ MouseArea {
 
     // Standalone build addition :: analog cookie clock (same one the SDDM theme
     // uses -- ported from psalm52/illogical_sddm). Styling lives entirely in
-    // clock/Settings.qml and clock/Colors.qml.
-    IIClock.CookieClock {
+    // clock/Settings.qml -- including which face renders here:
+    // background_widgets_clock_styleLocked: "cookie" | "digital" | "none".
+    // clock vertical position -- mkIiLock knob target
+    property real clockTopFactor: 0.16
+    Loader {
+        id: lockClock
         anchors {
             horizontalCenter: parent.horizontalCenter
             top: parent.top
-            topMargin: parent.height * 0.16
+            topMargin: parent.height * root.clockTopFactor
         }
-        implicitSize: Math.min(parent.width, parent.height) * 0.28
-        scale: root.toolbarScale
+        active: IIClock.Settings.background_widgets_clock_styleLocked !== "none"
+        transformOrigin: Item.Top
+        scale: root.toolbarScale * root.uiScale
         opacity: root.toolbarOpacity
+        sourceComponent: IIClock.Settings.background_widgets_clock_styleLocked === "digital"
+            ? digitalClockComp : cookieClockComp
     }
+    Component { id: cookieClockComp; IIClock.CookieClock {} }
+    Component { id: digitalClockComp; IIClock.DigitalClock {} }
 
     // Key presses
     property bool ctrlHeld: false
@@ -116,6 +131,18 @@ MouseArea {
     //         text: "[[ DEBUG BYPASS ]]"
     //     }
     // }
+
+    // Standalone build addition :: the three bottom toolbars are anchor-chained
+    // (left/right islands hang off mainIsland's edges), and scale transforms do
+    // not update anchor geometry -- scaling each island individually makes them
+    // overlap. So all three live in this group, scaled together about the
+    // bottom-center of the screen; the whole chain (gaps included) grows
+    // coherently with root.uiScale.
+    Item {
+        id: bottomGroup
+        anchors.fill: parent
+        scale: root.uiScale
+        transformOrigin: Item.Bottom
 
     // Main toolbar: password box
     Toolbar {
@@ -261,11 +288,52 @@ MouseArea {
         scale: root.toolbarScale
         opacity: root.toolbarOpacity
 
-        // Username
-        IconAndTextPair {
-            Layout.leftMargin: 8
-            icon: "account_circle"
-            text: SystemInfo.username
+        // Username + avatar
+        // Standalone build addition :: loads the real profile picture from
+        // AccountsService (same source SDDM uses), circle-cropped; falls back
+        // to the original account_circle icon if the file is missing/unreadable.
+        Row {
+            spacing: 6
+            Layout.fillHeight: true
+            Layout.leftMargin: 10
+            Layout.rightMargin: 10
+
+            Item {
+                width: 26
+                height: 26
+                anchors.verticalCenter: parent.verticalCenter
+
+                Image {
+                    id: avatarImg
+                    anchors.fill: parent
+                    source: "file:///var/lib/AccountsService/icons/" + SystemInfo.username
+                    fillMode: Image.PreserveAspectCrop
+                    sourceSize.width: 64
+                    sourceSize.height: 64
+                    visible: status === Image.Ready
+                    layer.enabled: true
+                    layer.effect: OpacityMask {
+                        maskSource: Rectangle {
+                            width: avatarImg.width
+                            height: avatarImg.height
+                            radius: width / 2
+                        }
+                    }
+                }
+                MaterialSymbol {
+                    anchors.centerIn: parent
+                    visible: avatarImg.status !== Image.Ready
+                    fill: 1
+                    text: "account_circle"
+                    iconSize: Appearance.font.pixelSize.huge
+                    color: Appearance.colors.colOnSurfaceVariant
+                }
+            }
+            StyledText {
+                anchors.verticalCenter: parent.verticalCenter
+                text: SystemInfo.username
+                color: Appearance.colors.colOnSurfaceVariant
+            }
         }
 
         // Standalone build note :: dropped the keyboard-layout (Xkb) indicator, which
@@ -314,6 +382,8 @@ MouseArea {
             targetAction: LockContext.ActionEnum.Reboot
         }
     }
+
+    } // end bottomGroup
 
     component PasswordGuardedIconToolbarButton: IconToolbarButton {
         id: guardedBtn

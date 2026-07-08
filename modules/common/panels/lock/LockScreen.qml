@@ -19,6 +19,9 @@ Scope {
 
     required property Component lockSurface
     property alias context: lockContext
+    // wallpaper dim strength (0 = none, 1 = black) -- mkIiLock knob target
+    property real wallpaperDim: 0.28
+
     property Component sessionLockSurface: WlSessionLockSurface {
         id: sessionLockSurface
         // Standalone build note :: upstream used color: "transparent", relying on the
@@ -37,7 +40,7 @@ Scope {
         Rectangle {
             anchors.fill: parent
             color: "#000000"
-            opacity: 0.28
+            opacity: root.wallpaperDim
         }
         Loader {
             active: GlobalStates.screenLocked
